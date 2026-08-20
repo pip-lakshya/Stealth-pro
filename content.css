@@ -1,0 +1,32 @@
+#stealth-popup {
+  position: fixed !important;
+  top: 10px !important;
+  left: 10px !important;
+
+  background: rgba(0, 0, 0, 0.85) !important;
+  color: #00ffcc !important;
+
+  padding: 6px 10px !important;
+  font-size: 14px !important;
+  font-weight: bold !important;
+
+  border-radius: 6px !important;
+
+  z-index: 2147483647 !important;
+
+  pointer-events: none !important;
+
+  font-family: monospace !important;
+}
+
+.loading {
+  color: yellow !important;
+}
+
+.success {
+  color: #00ffcc !important;
+}
+
+.error {
+  color: red !important;
+}

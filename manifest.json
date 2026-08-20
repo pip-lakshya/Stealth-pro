@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Stealth Pro",
+  "version": "3.0",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+ "content_scripts": [
+  {
+    "matches": ["<all_urls>"],
+    "js": ["content.js"],
+    "css": ["content.css"]
+  }
+  ],
+  "commands": {
+    "solve-question": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S"
+      },
+      "description": "Solve question"
+    }
+  },
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "tesseract.min.js",
+        "worker.min.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}
