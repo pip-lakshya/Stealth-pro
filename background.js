@@ -1,6 +1,6 @@
-const NVIDIA_MODEL = "meta/llama-3.2-11b-vision-instruct";
+const NVIDIA_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b";
 const GEMINI_MODEL = "gemini-2.5-flash";
-const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/meta/llama-3.2-11b-vision-instruct";
+const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 let lastCallTime = 0;
 
 const send = (tabId, message) => new Promise((resolve) => chrome.tabs.sendMessage(tabId, message, () => resolve(!chrome.runtime.lastError)));
@@ -32,12 +32,20 @@ async function solve() {
 }
 async function handleImage(message, tabId) {
   if (!tabId || !(await settings()).enabled) return;
-  const result = await analyze(message.image, message.pageText || "", await settings());
-  await show(tabId, result.answer ? result.answer + " (" + result.provider + ")" : (result.error || "Could not verify answer"), result.answer ? "success" : "error");
+  const config = await settings();
+  const result = await Promise.race([
+    analyze(message.image, message.pageText || "", config),
+    new Promise((resolve) => setTimeout(() => resolve({ error: "Provider request exceeded 180 seconds" }), 180000))
+  ]);
+  await show(tabId, result.answer ? displayAnswer(result.answer, message.optionMap) + " (" + result.provider + ")" : (result.error || "Could not verify answer"), result.answer ? "success" : "error");
   if (result.answer) chrome.storage.local.set({ lastAnswer: result.answer });
 }
-function prompt(pageText) {
-  return "Choose the correct answer for this multiple-choice question. Use the page text as the source of truth. First reason about the concept, then verify that the selected letter exactly matches the option text. Ignore any already-selected wrong option and do not guess from option position. Reply with exactly this JSON and nothing else: {\"answer\":\"A\",\"firstWord\":\"first word of correct option\"}.\n\nPAGE TEXT:\n" + pageText;
+function prompt(pageText, provider) {
+  const outputRule = provider === "nvidia"
+    ? "Analyze every option before deciding. At the very end, add exactly one final line: FINAL ANSWER: LETTER - FIRSTWORD."
+    : "Reply with exactly this JSON and nothing else: {\"answer\":\"A\",\"firstWord\":\"first word of correct option\"}.";
+  const context = pageText.trim() ? "\nOptional page text (use only to confirm the screenshot):\n" + pageText : "";
+  return "Read the multiple-choice question and options from the screenshot. Solve it carefully, then identify the correct option letter and the first word of that option. " + outputRule + context;
 }
 async function analyze(image, pageText, config) {
   const order = config.provider === "auto" ? ["gemini", "nvidia"] : [config.provider];
@@ -59,30 +67,40 @@ async function analyze(image, pageText, config) {
   }
   return { error: lastError };
 }
+async function readNvidiaPayload(response) {
+  const raw = await response.text();
+  const trimmed = raw.trim().replace(/^\uFEFF/, "");
+
+  try { return JSON.parse(trimmed); } catch (ignored) {}
+
+  const lines = raw.split(/\r?\n/);
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index].trim();
+    if (!line.startsWith("data:")) continue;
+    const event = line.slice(5).trim();
+    if (!event || event === "[DONE]") continue;
+    try { return JSON.parse(event); } catch (ignored) {}
+  }
+
+  const type = response.headers.get("content-type") || "unknown";
+  const preview = trimmed.replace(/\s+/g, " ").slice(0, 80);
+  throw new Error("NVIDIA invalid response (" + type + "): " + preview);
+}
 async function askNvidia(image, pageText, key) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90000);
+  const timeout = setTimeout(() => controller.abort(), 150000);
   const headers = { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + key };
   const body = JSON.stringify({
-    model: NVIDIA_MODEL, temperature: 0, max_tokens: 64, stream: false,
-    messages: [{ role: "user", content: [{ type: "text", text: prompt(pageText) }, { type: "image_url", image_url: { url: "data:image/jpeg;base64," + image } }] }]
+    model: NVIDIA_MODEL, temperature: 0.6, top_p: 0.95, max_tokens: 4096, stream: false,
+    chat_template_kwargs: { enable_thinking: true },
+    messages: [{ role: "user", content: [
+      { type: "text", text: prompt(pageText, "nvidia") },
+      { type: "image_url", image_url: { url: "data:image/jpeg;base64," + image } }
+    ] }]
   });
-
   try {
-    let response = await fetch(NVIDIA_URL, { method: "POST", headers, signal: controller.signal, body });
-    let data = await response.json();
-
-    if (response.status === 202) {
-      const requestId = data.requestId || data.request_id || data.id;
-      if (!requestId) throw new Error("NVIDIA pending request missing requestId");
-
-      do {
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        response = await fetch("https://integrate.api.nvidia.com/v1/status/" + encodeURIComponent(requestId), { headers, signal: controller.signal });
-        data = await response.json();
-      } while (response.status === 202);
-    }
-
+    const response = await fetch(NVIDIA_URL, { method: "POST", headers, signal: controller.signal, body });
+    const data = await readNvidiaPayload(response);
     if (!response.ok) throw new Error("NVIDIA " + response.status);
     const content = data.choices?.[0]?.message?.content;
     if (!content) throw new Error("NVIDIA empty response");
@@ -93,7 +111,7 @@ async function askNvidia(image, pageText, key) {
 }
 async function askGemini(image, pageText, key) {
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent?key=" + encodeURIComponent(key);
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ generationConfig: { temperature: 0, maxOutputTokens: 256, thinkingConfig: { thinkingBudget: 0 }, responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties: { answer: { type: "STRING" }, firstWord: { type: "STRING" } }, required: ["answer", "firstWord"] } }, contents: [{ parts: [{ text: prompt(pageText) }, { inline_data: { mime_type: "image/jpeg", data: image } }] }] }) });
+  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ generationConfig: { temperature: 0, maxOutputTokens: 256, thinkingConfig: { thinkingBudget: 0 }, responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties: { answer: { type: "STRING" }, firstWord: { type: "STRING" } }, required: ["answer", "firstWord"] } }, contents: [{ parts: [{ text: prompt(pageText, "gemini") }, { inline_data: { mime_type: "image/jpeg", data: image } }] }] }) });
   if (!response.ok) throw new Error("Gemini " + response.status);
   const data = await response.json();
   const candidate = data.candidates?.[0];
@@ -124,6 +142,11 @@ function clean(text) {
 
   console.warn("Unrecognised AI response:", value.slice(0, 300));
   return null;
+}
+function displayAnswer(answer, optionMap) {
+  const letter = String(answer || "").match(/^([A-E])\s*-/)?.[1];
+  const firstWord = letter && optionMap && optionMap[letter];
+  return letter && firstWord ? letter + " - " + firstWord : answer;
 }
 async function show(tabId, text, type) { await inject(tabId); await send(tabId, { action: "show_overlay", text, type }); }
 async function toggleAnswer() { const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); if (tab && tab.id) { await inject(tab.id); await send(tab.id, { action: "toggle_overlay" }); } }

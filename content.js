@@ -3,7 +3,7 @@ if (!window.__STEALTH_LOADED__) {
   chrome.runtime.onMessage.addListener((request) => {
     if (request.action === "process_image") {
       compressImage(request.base64).then((image) => chrome.runtime.sendMessage({
-        action: "processed_data", image, pageText: document.body ? document.body.innerText.slice(0, 9000) : ""
+        action: "processed_data", image, pageText: document.body ? document.body.innerText.slice(0, 4000) : "", optionMap: readOptions(document.body ? document.body.innerText : "")
       }));
     }
     if (request.action === "show_overlay") show(request.text, request.type);
@@ -11,15 +11,30 @@ if (!window.__STEALTH_LOADED__) {
     if (request.action === "hide_overlay") { const root = document.getElementById("stealth-root"); if (root) root.remove(); }
   });
 }
+function readOptions(text) {
+  const map = {};
+  const pattern = /(?:^|\n)\s*([A-E])(?:[.)])?\s*(?:\n\s*)?([A-Za-z][A-Za-z\'-]*)/gmi;
+  let match;
+  while ((match = pattern.exec(text)) && Object.keys(map).length < 5) map[match[1].toUpperCase()] = match[2];
+  return map;
+}
 function compressImage(base64) {
   return new Promise((resolve) => {
     const image = new Image();
     image.onload = () => {
-      const max = 1280, scale = Math.min(1, max / Math.max(image.width, image.height));
+      const max = 768, scale = Math.min(1, max / Math.max(image.width, image.height));
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(image.width * scale); canvas.height = Math.round(image.height * scale);
-      canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", 0.78).split(",")[1]);
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      let quality = 0.72, dataUrl = canvas.toDataURL("image/jpeg", quality);
+      // NVIDIA inline vision payloads must stay below its 180 KB asset threshold.
+      while (dataUrl.length * 0.75 > 170 * 1024 && quality > 0.3) {
+        quality -= 0.08;
+        dataUrl = canvas.toDataURL("image/jpeg", quality);
+      }
+      resolve(dataUrl.split(",")[1]);
     };
     image.onerror = () => resolve(base64);
     image.src = "data:image/png;base64," + base64;
