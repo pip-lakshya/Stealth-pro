@@ -1,80 +1,20 @@
-// 🔥 PREVENT MULTIPLE LOAD
-if (window.__STEALTH_LOADED__) {
-  console.log("Already injected");
-} else {
+if (!window.__STEALTH_LOADED__) {
   window.__STEALTH_LOADED__ = true;
-
-  if (!window.__STEALTH_TIMER__) {
-    window.__STEALTH_TIMER__ = null;
-  }
-
-  chrome.runtime.onMessage.addListener(async (req) => {
-
-    // 🔹 DIRECT IMAGE FOR AI (NO OCR)
-    if (req.action === "process_image") {
-      chrome.runtime.sendMessage({
-        action: "processed_data",
-        text: "", // skip OCR
-        image: req.base64
-      });
-    }
-
-    // 🔹 SHOW OVERLAY
-    if (req.action === "show_overlay") {
-      show(req.text, req.type);
-    }
+  chrome.runtime.onMessage.addListener((request) => {
+    if (request.action === "process_image") chrome.runtime.sendMessage({ action: "processed_data", image: request.base64, pageText: document.body ? document.body.innerText.slice(0, 14000) : "" });
+    if (request.action === "show_overlay") show(request.text, request.type);
+    if (request.action === "toggle_overlay") toggle();
+    if (request.action === "hide_overlay") { const root = document.getElementById("stealth-root"); if (root) root.remove(); }
   });
 }
-
-// 🔹 OVERLAY
-function show(text, type) {
-  console.log("SHOW:", text);
-
+function getBox() {
   let root = document.getElementById("stealth-root");
-
-  if (!root) {
-    root = document.createElement("div");
-    root.id = "stealth-root";
-
-    root.style.position = "fixed";
-    root.style.top = "0";
-    root.style.left = "0";
-    root.style.zIndex = "2147483647";
-    root.style.pointerEvents = "none";
-
-    document.documentElement.appendChild(root);
-
-    const shadow = root.attachShadow({ mode: "open" });
-
-    const style = document.createElement("style");
- style.textContent = `
-  #box {
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    transform: translateZ(9999px);
-    background: rgba(0,0,0,0.85);
-    color: #00ffcc;
-    padding: 6px 10px;
-    font-size: 14px;
-    border-radius: 6px;
-    font-family: monospace;
-  }
-`;
-
-    const box = document.createElement("div");
-    box.id = "box";
-
-    shadow.appendChild(style);
-    shadow.appendChild(box);
-  }
-
-  const box = root.shadowRoot.getElementById("box");
-  box.innerText = text;
-
-  clearTimeout(window.__STEALTH_TIMER__);
-
-  window.__STEALTH_TIMER__ = setTimeout(() => {
-    root.remove();
-  }, 4000);
+  if (root) return root.shadowRoot.querySelector("#box");
+  root = document.createElement("div"); root.id = "stealth-root"; root.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none"; document.documentElement.append(root);
+  const shadow = root.attachShadow({ mode: "open" }), style = document.createElement("style"), box = document.createElement("div");
+  style.textContent = "#box{position:fixed;max-width:min(300px,calc(100vw - 28px));padding:10px 13px;border:1px solid #54d8c1;border-radius:9px;background:#071014f0;color:#6fffe6;font:700 15px/1.25 system-ui;box-shadow:0 8px 28px #0008}#box.loading{color:#ffe76a;border-color:#ffe76a}#box.error{color:#ff9999;border-color:#ff9999}#box.hidden{opacity:0;visibility:hidden}";
+  box.id = "box"; shadow.append(style, box); return box;
 }
+function show(text, type) { const box = getBox(); box.textContent = text; box.className = type || "success"; box.dataset.visible = "true"; requestAnimationFrame(() => place(box)); }
+function toggle() { const box = getBox(), visible = box.dataset.visible !== "false"; box.dataset.visible = String(!visible); box.classList.toggle("hidden", visible); if (!visible) requestAnimationFrame(() => place(box)); }
+function place(box) { const m=14,w=box.offsetWidth,h=box.offsetHeight,points=[[m,m],[innerWidth-w-m,m],[m,innerHeight-h-m],[innerWidth-w-m,innerHeight-h-m]]; let best=points[0],score=Infinity; for(const p of points){const x=Math.max(m,p[0]),y=Math.max(m,p[1]),el=document.elementFromPoint(x+4,y+4),s=el&&(getComputedStyle(el).position==="fixed"||getComputedStyle(el).position==="sticky")?1:0;if(s<score){best=p;score=s;}} box.style.left=Math.max(m,best[0])+"px";box.style.top=Math.max(m,best[1])+"px"; }

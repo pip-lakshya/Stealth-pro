@@ -1,11 +1,1 @@
-<!DOCTYPE html>
-<html>
-<body style="width:250px;padding:15px;font-family:Arial;">
-
-<input id="apiKey" placeholder="Enter API Key" style="width:100%;padding:8px;" />
-<button id="saveBtn" style="width:100%;margin-top:10px;">Save</button>
-<button id="solveBtn" style="width:100%;margin-top:10px;">Solve</button>
-
-<script src="popup.js"></script>
-</body>
-</html>
+<!doctype html><html><head><style>body{width:300px;padding:14px;font:14px Arial;color:#18232d}label{display:block;font-weight:bold;margin-top:10px}textarea,select{box-sizing:border-box;width:100%;margin-top:5px;padding:7px}textarea{height:68px}button{width:100%;padding:9px;margin-top:9px;border:0;border-radius:5px;background:#087b6e;color:#fff;font-weight:bold}.off{background:#a12b2b}small{color:#66717c}</style></head><body><label>Provider</label><select id="provider"><option value="auto">Auto: NVIDIA then Gemini</option><option value="nvidia">NVIDIA only</option><option value="gemini">Gemini only</option></select><label>NVIDIA API keys</label><textarea id="nvidia" placeholder="One key per line"></textarea><label>Gemini API keys</label><textarea id="gemini" placeholder="One key per line"></textarea><small>Each provider tries its saved keys in order.</small><button id="save">Save settings</button><button id="solve">Solve screen</button><button id="toggle">Show / hide answer</button><button id="enabled" class="off"></button><small>Shortcuts: Ctrl+Shift+S solve, Ctrl+Shift+H hide/show.</small><script src="popup.js"></script></body></html>
