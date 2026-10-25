@@ -112,8 +112,40 @@ async function askNvidia(image, pageText, key) {
 async function askGemini(image, pageText, key, model) {
   const selectedModel = /^[a-z0-9.-]+$/i.test(model || "") ? model : DEFAULT_GEMINI_MODEL;
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + selectedModel + ":generateContent?key=" + encodeURIComponent(key);
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ generationConfig: { temperature: 0, maxOutputTokens: 256, thinkingConfig: { thinkingBudget: 0 }, responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties: { answer: { type: "STRING" }, firstWord: { type: "STRING" } }, required: ["answer", "firstWord"] } }, contents: [{ parts: [{ text: prompt(pageText, "gemini") }, { inline_data: { mime_type: "image/jpeg", data: image } }] }] }) });
-  if (!response.ok) throw new Error("Gemini " + response.status);
+  const generationConfig = {
+    temperature: 0,
+    maxOutputTokens: 256,
+    responseMimeType: "application/json",
+    responseSchema: {
+      type: "OBJECT",
+      properties: { answer: { type: "STRING" }, firstWord: { type: "STRING" } },
+      required: ["answer", "firstWord"]
+    }
+  };
+
+  // Gemini 2.5 accepts thinkingBudget; Gemini 3 models reject it and use
+  // their model-default thinking level if none is specified.
+  if (selectedModel.startsWith("gemini-2.5-")) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      generationConfig,
+      contents: [{ parts: [
+        { text: prompt(pageText, "gemini") },
+        { inline_data: { mime_type: "image/jpeg", data: image } }
+      ] }]
+    })
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    const detail = errorBody?.error?.message || errorBody?.error?.status || "request rejected";
+    throw new Error("Gemini " + response.status + ": " + detail);
+  }
   const data = await response.json();
   const candidate = data.candidates?.[0];
   const parts = candidate?.content?.parts || [];
