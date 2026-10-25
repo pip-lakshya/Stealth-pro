@@ -1,13 +1,13 @@
 const NVIDIA_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b";
-const GEMINI_MODEL = "gemini-2.5-flash";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 let lastCallTime = 0;
 
 const send = (tabId, message) => new Promise((resolve) => chrome.tabs.sendMessage(tabId, message, () => resolve(!chrome.runtime.lastError)));
 async function inject(tabId) { try { await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }); } catch (error) { console.warn(error); } }
 async function settings() {
-  const data = await chrome.storage.sync.get(["nvidiaApiKeys", "geminiApiKeys", "provider", "extensionEnabled"]);
-  return { nvidiaKeys: Array.isArray(data.nvidiaApiKeys) ? data.nvidiaApiKeys.filter(Boolean) : [], geminiKeys: Array.isArray(data.geminiApiKeys) ? data.geminiApiKeys.filter(Boolean) : [], provider: data.provider || "auto", enabled: data.extensionEnabled !== false };
+  const data = await chrome.storage.sync.get(["nvidiaApiKeys", "geminiApiKeys", "provider", "geminiModel", "extensionEnabled"]);
+  return { nvidiaKeys: Array.isArray(data.nvidiaApiKeys) ? data.nvidiaApiKeys.filter(Boolean) : [], geminiKeys: Array.isArray(data.geminiApiKeys) ? data.geminiApiKeys.filter(Boolean) : [], provider: data.provider || "auto", geminiModel: data.geminiModel || DEFAULT_GEMINI_MODEL, enabled: data.extensionEnabled !== false };
 }
 
 chrome.commands.onCommand.addListener((command) => { if (command === "solve-question") solve(); if (command === "toggle-answer") toggleAnswer(); });
@@ -54,7 +54,7 @@ async function analyze(image, pageText, config) {
     const keys = provider === "nvidia" ? config.nvidiaKeys : config.geminiKeys;
     for (const key of keys) {
       try {
-        const output = provider === "nvidia" ? await askNvidia(image, pageText, key) : await askGemini(image, pageText, key);
+        const output = provider === "nvidia" ? await askNvidia(image, pageText, key) : await askGemini(image, pageText, key, config.geminiModel);
         if (!output) { lastError = provider + ": empty reply"; continue; }
         const answer = clean(output);
         if (answer) return { answer, provider };
@@ -109,8 +109,9 @@ async function askNvidia(image, pageText, key) {
     clearTimeout(timeout);
   }
 }
-async function askGemini(image, pageText, key) {
-  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent?key=" + encodeURIComponent(key);
+async function askGemini(image, pageText, key, model) {
+  const selectedModel = /^[a-z0-9.-]+$/i.test(model || "") ? model : DEFAULT_GEMINI_MODEL;
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + selectedModel + ":generateContent?key=" + encodeURIComponent(key);
   const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ generationConfig: { temperature: 0, maxOutputTokens: 256, thinkingConfig: { thinkingBudget: 0 }, responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties: { answer: { type: "STRING" }, firstWord: { type: "STRING" } }, required: ["answer", "firstWord"] } }, contents: [{ parts: [{ text: prompt(pageText, "gemini") }, { inline_data: { mime_type: "image/jpeg", data: image } }] }] }) });
   if (!response.ok) throw new Error("Gemini " + response.status);
   const data = await response.json();
