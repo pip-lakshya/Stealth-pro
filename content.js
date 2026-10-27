@@ -45,7 +45,7 @@ function getBox() {
   if (root) return root.shadowRoot.querySelector("#box");
   root = document.createElement("div"); root.id = "stealth-root"; root.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none"; document.documentElement.append(root);
   const shadow = root.attachShadow({ mode: "open" }), style = document.createElement("style"), box = document.createElement("div");
-  style.textContent = "#box{position:fixed;max-width:min(300px,calc(100vw - 28px));padding:10px 13px;border:1px solid #54d8c1;border-radius:9px;background:#071014f0;color:#6fffe6;font:700 15px/1.25 system-ui;box-shadow:0 8px 28px #0008}#box.loading{color:#ffe76a;border-color:#ffe76a}#box.error{color:#ff9999;border-color:#ff9999}#box.hidden{opacity:0;visibility:hidden}";
+  style.textContent = "#box{position:fixed;max-width:min(235px,calc(100vw - 28px));padding:7px 10px;border:1px solid #54d8c1;border-radius:8px;background:rgba(7,16,20,.48);color:#6fffe6;font:700 13px/1.2 system-ui;box-shadow:0 6px 20px #0006;backdrop-filter:blur(2px)}#box.loading{color:#ffe76a;border-color:#ffe76a}#box.error{color:#ff9999;border-color:#ff9999}#box.hidden{opacity:0;visibility:hidden}";
   box.id = "box"; shadow.append(style, box); return box;
 }
 function show(text, type) { const box = getBox(); box.textContent = text; box.className = type || "success"; box.dataset.visible = "true"; requestAnimationFrame(() => place(box)); }
